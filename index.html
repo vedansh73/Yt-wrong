@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Chat Command Bot</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+:root{--bg:#F3F5F9;--ink:#0F1B33;--card:#fff;--line:#CBD3E1;--red:#E5262E;--ok:#1F9D74;--mute:#5B6785}
+@media(prefers-color-scheme:dark){:root{--bg:#0E1424;--ink:#E9EEF8;--card:#172036;--line:#2B3858;--mute:#93A0BE}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Bricolage Grotesque',system-ui,sans-serif;line-height:1.5}
+main{max-width:760px;margin:0 auto;padding:20px 16px 60px}
+header{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+#logo{width:64px;height:64px;border-radius:14px;object-fit:cover;background:var(--line);flex:none}
+h1{font-size:1.6rem;margin:0;font-weight:800;letter-spacing:-.02em}
+.sub{color:var(--mute);font-size:.9rem}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+h2{font-size:1rem;margin:0 0 10px;font-weight:600}
+label{display:block;font-size:.85rem;color:var(--mute);margin:10px 0 3px}
+input,textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink);font:inherit}
+textarea{min-height:170px;font-family:ui-monospace,monospace;font-size:.85rem}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{font:inherit;font-weight:600;padding:10px 16px;border-radius:8px;border:1px solid var(--ink);background:transparent;color:var(--ink);cursor:pointer}
+button.go{background:var(--red);border-color:var(--red);color:#fff}
+button:disabled{opacity:.5;cursor:default}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--red);outline-offset:2px}
+.bar{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+#status{display:flex;align-items:center;gap:8px;font-weight:600}
+#dot{width:10px;height:10px;border-radius:50%;background:var(--mute)}
+#dot.on{background:var(--red);box-shadow:0 0 0 4px rgba(229,38,46,.2)}
+#log{height:300px;overflow:auto;font-size:.85rem;border:1px solid var(--line);border-radius:8px;padding:8px}
+#log div{padding:4px 0;border-bottom:1px solid var(--line)}
+.q{color:var(--mute)}.a{color:var(--ok)}.e{color:var(--red)}
+@media(max-width:520px){.row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <img id="logo" alt="Logo" src="logo.png" onerror="this.style.visibility='hidden'">
+  <div><h1 id="title">Live Chat Command Bot</h1><div class="sub">Replies to chat commands like !hi, !rules, !help</div></div>
+</header>
+
+<section>
+  <h2>Branding</h2>
+  <div class="row">
+    <div><label for="logoFile">Choose a logo (png/jpg)</label><input type="file" id="logoFile" accept="image/*"></div>
+    <div><label for="ttl">Page title</label><input id="ttl" placeholder="My Live Bot"></div>
+  </div>
+</section>
+
+<section>
+  <h2>Setup</h2>
+  <label for="cid">Google OAuth Client ID</label><input id="cid" placeholder="xxxx.apps.googleusercontent.com">
+  <div class="row">
+    <div><label for="vid">Live video ID (leave empty to use your active live)</label><input id="vid" placeholder="dQw4w9WgXcQ"></div>
+    <div><label for="poll">Check chat every (seconds)</label><input id="poll" type="number" value="10" min="5"></div>
+    <div><label for="gap">Gap between replies (seconds)</label><input id="gap" type="number" value="3" min="2"></div>
+    <div><label for="max">Max replies (protects your quota)</label><input id="max" type="number" value="150" min="1"></div>
+  </div>
+  <label for="cmds">Commands (one per line: command = reply). Use {user} for the viewer's name and {time} for the time.</label>
+  <textarea id="cmds"></textarea>
+  <div class="bar">
+    <button id="login">Sign in with Google</button>
+    <button id="start" class="go" disabled>Start</button>
+    <button id="stop" disabled>Stop</button>
+  </div>
+</section>
+
+<section>
+  <div id="status"><span id="dot"></span><span id="st">Sign in to begin</span></div>
+  <div class="sub" id="cnt">Replies: 0</div>
+  <h2 style="margin-top:12px">Log</h2>
+  <div id="log"></div>
+</section>
+</main>
+
+<script>
+const DEFAULT_CMDS=`!hi = Hello {user}! Welcome to the stream 👋
+!help = Commands: !hi !rules !subscribe !discord !time
+!rules = 1) Be respectful 2) No spam 3) No abusive language
+!subscribe = Please subscribe and press the bell icon 🔔
+!discord = Join our Discord: (put your link here)
+!time = Current time: {time}`;
+
+const $=id=>document.getElementById(id);
+const FIELDS=['cid','vid','poll','gap','max','cmds','ttl'];
+const save=()=>{try{FIELDS.forEach(f=>localStorage.setItem('cb_'+f,$(f).value))}catch(e){}};
+$('cmds').value=DEFAULT_CMDS;
+try{
+  FIELDS.forEach(f=>{const v=localStorage.getItem('cb_'+f);if(v!==null&&v!=='')$(f).value=v});
+  const lg=localStorage.getItem('cb_logo');if(lg){$('logo').src=lg;$('logo').style.visibility='visible'}
+}catch(e){}
+if($('ttl').value)$('title').textContent=$('ttl').value;
+FIELDS.forEach(f=>$(f).addEventListener('input',()=>{save();if(f==='ttl')$('title').textContent=$('ttl').value||'Live Chat Command Bot'}));
+
+$('logoFile').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{$('logo').src=r.result;$('logo').style.visibility='visible';try{localStorage.setItem('cb_logo',r.result)}catch(e){log('Logo is too large. Use a smaller file, or put logo.png in the repo.','e')}};
+  r.readAsDataURL(f);
+};
+
+function log(t,c=''){const d=document.createElement('div');d.className=c;d.textContent=t;$('log').prepend(d)}
+function setSt(t,on){$('st').textContent=t;$('dot').className=on?'on':''}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+let token=null,running=false,queue=[],seen=new Set(),replies=0,me=null,chatId=null,pageToken=null,first=true,used={};
+
+function parseCmds(){
+  const map={};
+  $('cmds').value.split('\n').forEach(l=>{
+    const i=l.indexOf('=');if(i<1)return;
+    const k=l.slice(0,i).trim().toLowerCase(),v=l.slice(i+1).trim();
+    if(k&&v)map[k]=v;
+  });
+  return map;
+}
+
+$('login').onclick=()=>{
+  const cid=$('cid').value.trim();
+  if(!cid||!window.google){log('Add your Client ID, then try again.','e');return}
+  google.accounts.oauth2.initTokenClient({
+    client_id:cid,
+    scope:'https://www.googleapis.com/auth/youtube.force-ssl',
+    callback:r=>{
+      if(r.error){log('Sign-in failed: '+r.error,'e');return}
+      token=r.access_token;$('start').disabled=false;setSt('Signed in. Press Start.',false);
+    }
+  }).requestAccessToken();
+};
+
+async function yt(path,opt={}){
+  const r=await fetch('https://www.googleapis.com/youtube/v3/'+path,{...opt,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'}});
+  if(r.status===401){token=null;running=false;setSt('Session expired. Sign in again.',false);throw new Error('Token expired (this happens after 1 hour).')}
+  const j=await r.json();
+  if(!r.ok)throw new Error(j.error?.message||r.status);
+  return j;
+}
+
+async function findChat(){
+  const v=$('vid').value.trim();
+  if(v){
+    const j=await yt('videos?part=liveStreamingDetails&id='+encodeURIComponent(v));
+    return j.items?.[0]?.liveStreamingDetails?.activeLiveChatId;
+  }
+  const j=await yt('liveBroadcasts?part=snippet&broadcastStatus=active&broadcastType=all&mine=true');
+  return j.items?.[0]?.snippet?.liveChatId;
+}
+
+async function post(text){
+  await yt('liveChat/messages?part=snippet',{method:'POST',body:JSON.stringify({
+    snippet:{liveChatId:chatId,type:'textMessageEvent',textMessageDetails:{messageText:text}}})});
+}
+
+async function worker(){
+  while(running){
+    const m=queue.shift();
+    if(!m){await sleep(500);continue}
+    if(replies>=+$('max').value){log('Max replies reached. Bot stopped.','e');stop();break}
+    try{
+      let out=m.reply.replace(/\{user\}/g,m.name).replace(/\{time\}/g,new Date().toLocaleTimeString());
+      out=`@${m.name} ${out}`;
+      if(out.length>200)out=out.slice(0,197)+'...';
+      await post(out);
+      replies++;$('cnt').textContent='Replies: '+replies;
+      log(`${m.name}: ${m.text}  →  ${out}`,'a');
+    }catch(e){log(e.message,'e')}
+    await sleep(Math.max(2,+$('gap').value)*1000);
+  }
+}
+
+async function poller(){
+  while(running){
+    let wait=10000;
+    try{
+      const cmds=parseCmds();
+      const j=await yt(`liveChat/messages?liveChatId=${chatId}&part=snippet,authorDetails&maxResults=200`+(pageToken?`&pageToken=${pageToken}`:''));
+      pageToken=j.nextPageToken;
+      wait=Math.max(j.pollingIntervalMillis||5000,Math.max(5,+$('poll').value)*1000);
+      for(const it of j.items||[]){
+        if(seen.has(it.id))continue;seen.add(it.id);
+        if(first)continue; // skip old messages
+        if(it.snippet.type!=='textMessageEvent')continue;
+        if(it.authorDetails.channelId===me)continue; // never reply to itself
+        const text=(it.snippet.displayMessage||'').trim();
+        const word=text.split(/\s+/)[0].toLowerCase();
+        const reply=cmds[word];
+        if(!reply)continue;
+        const now=Date.now();
+        if(used[word]&&now-used[word]<10000)continue; // 10s cooldown per command
+        used[word]=now;
+        if(queue.length<20)queue.push({name:it.authorDetails.displayName,text,reply});
+      }
+      first=false;
+    }catch(e){log(e.message,'e')}
+    await sleep(wait);
+  }
+}
+
+$('start').onclick=async()=>{
+  try{
+    setSt('Looking for your live chat...',false);
+    me=(await yt('channels?part=id&mine=true')).items?.[0]?.id;
+    chatId=await findChat();
+    if(!chatId){setSt('No active live stream found',false);log('Start your live or enter a video ID.','e');return}
+    running=true;first=true;pageToken=null;queue=[];used={};
+    $('start').disabled=true;$('stop').disabled=false;
+    setSt('LIVE: bot is running',true);
+    log('Bot started. Commands loaded: '+Object.keys(parseCmds()).join(' '),'a');
+    poller();worker();
+  }catch(e){log(e.message,'e');setSt('Error',false)}
+};
+function stop(){running=false;$('start').disabled=!token;$('stop').disabled=true;setSt('Stopped',false)}
+$('stop').onclick=stop;
+</script>
+</body>
+    </html>
+    
